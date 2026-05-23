@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+app/build/
+
+# Kotlin / Android Studio cache
+.kotlin/
+.idea/
+*.iml
+
+# Local machine config
+local.properties
+
+# Build outputs
+*.apk
+*.aab
+
+# Signing keys - do not upload
+*.jks
+*.keystore
+
+# Logs
+*.log
