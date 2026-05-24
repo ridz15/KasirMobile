@@ -26,6 +26,7 @@ class BackupRepository(
                 .put("product_variation_options", dao.getAllVariationOptions().toJsonArray { it.toJson() })
                 .put("transactions", dao.getAllTransactions().toJsonArray { it.toJson() })
                 .put("transaction_items", dao.getAllTransactionItems().toJsonArray { it.toJson() })
+                .put("closing_reports", dao.getAllClosingReports().toJsonArray { it.toJson() })
 
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 output.write(json.toString(2).toByteArray(Charsets.UTF_8))
@@ -47,8 +48,10 @@ class BackupRepository(
             val options = json.getJSONArray("product_variation_options").mapObjects { it.toVariationOption() }
             val transactions = json.getJSONArray("transactions").mapObjects { it.toTransaction() }
             val items = json.getJSONArray("transaction_items").mapObjects { it.toTransactionItem() }
+            val closingReports = json.optJSONArray("closing_reports")?.mapObjects { it.toClosingReport() } ?: emptyList()
 
             database.withTransaction {
+                dao.clearClosingReports()
                 dao.clearTransactionItems()
                 dao.clearTransactions()
                 dao.clearVariationOptions()
@@ -61,6 +64,7 @@ class BackupRepository(
                 dao.insertVariationOptions(options)
                 dao.insertTransactions(transactions)
                 dao.replaceTransactionItems(items)
+                dao.insertClosingReports(closingReports)
             }
         }.isSuccess
     }
@@ -95,6 +99,7 @@ class BackupRepository(
         .put("category_id", categoryId)
         .put("base_price", basePrice)
         .put("has_variations", hasVariations)
+        .put("is_available", isAvailable)
         .put("created_at", createdAt)
         .put("updated_at", updatedAt)
 
@@ -116,6 +121,8 @@ class BackupRepository(
     private fun TransactionEntity.toJson() = JSONObject()
         .put("id", id)
         .put("transaction_number", transactionNumber)
+        .put("subtotal", subtotal)
+        .put("discount_amount", discountAmount)
         .put("total", total)
         .put("payment_amount", paymentAmount)
         .put("change_amount", changeAmount)
@@ -126,6 +133,7 @@ class BackupRepository(
         .put("refunded_at", refundedAt)
         .put("refund_amount", refundAmount)
         .put("refund_reason", refundReason)
+        .put("note", note)
         .put("created_at", createdAt)
 
     private fun TransactionItemEntity.toJson() = JSONObject()
@@ -138,6 +146,25 @@ class BackupRepository(
         .put("price", price)
         .put("quantity", quantity)
         .put("subtotal", subtotal)
+
+    private fun ClosingReportEntity.toJson() = JSONObject()
+        .put("id", id)
+        .put("report_date", reportDate)
+        .put("printed_at", printedAt)
+        .put("gross_sales", grossSales)
+        .put("discount_total", discountTotal)
+        .put("void_total", voidTotal)
+        .put("refund_total", refundTotal)
+        .put("net_sales", netSales)
+        .put("success_count", successCount)
+        .put("void_count", voidCount)
+        .put("refund_count", refundCount)
+        .put("tunai_total", tunaiTotal)
+        .put("qris_total", qrisTotal)
+        .put("tunai_count", tunaiCount)
+        .put("qris_count", qrisCount)
+        .put("item_sold_count", itemSoldCount)
+        .put("best_sellers_text", bestSellersText)
 
     private fun JSONObject.toCategory() = CategoryEntity(
         id = getLong("id"),
@@ -152,6 +179,7 @@ class BackupRepository(
         categoryId = optNullableLong("category_id"),
         basePrice = getLong("base_price"),
         hasVariations = getBoolean("has_variations"),
+        isAvailable = optBoolean("is_available", true),
         createdAt = getLong("created_at"),
         updatedAt = getLong("updated_at")
     )
@@ -176,6 +204,8 @@ class BackupRepository(
     private fun JSONObject.toTransaction() = TransactionEntity(
         id = getLong("id"),
         transactionNumber = getString("transaction_number"),
+        subtotal = optLong("subtotal", getLong("total")),
+        discountAmount = optLong("discount_amount", 0),
         total = getLong("total"),
         paymentAmount = getLong("payment_amount"),
         changeAmount = getLong("change_amount"),
@@ -186,6 +216,7 @@ class BackupRepository(
         refundedAt = optNullableLong("refunded_at"),
         refundAmount = optLong("refund_amount", 0),
         refundReason = optNullableString("refund_reason"),
+        note = optNullableString("note"),
         createdAt = getLong("created_at")
     )
 
@@ -199,6 +230,26 @@ class BackupRepository(
         price = getLong("price"),
         quantity = getInt("quantity"),
         subtotal = getLong("subtotal")
+    )
+
+    private fun JSONObject.toClosingReport() = ClosingReportEntity(
+        id = getLong("id"),
+        reportDate = getLong("report_date"),
+        printedAt = getLong("printed_at"),
+        grossSales = getLong("gross_sales"),
+        discountTotal = optLong("discount_total", 0),
+        voidTotal = getLong("void_total"),
+        refundTotal = getLong("refund_total"),
+        netSales = getLong("net_sales"),
+        successCount = getInt("success_count"),
+        voidCount = getInt("void_count"),
+        refundCount = getInt("refund_count"),
+        tunaiTotal = getLong("tunai_total"),
+        qrisTotal = getLong("qris_total"),
+        tunaiCount = optInt("tunai_count", 0),
+        qrisCount = optInt("qris_count", 0),
+        itemSoldCount = getInt("item_sold_count"),
+        bestSellersText = optString("best_sellers_text")
     )
 
     private fun JSONObject.optNullableString(name: String): String? {

@@ -1,7 +1,6 @@
 package com.moncake94.pos.printer
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.pm.PackageManager
@@ -10,8 +9,11 @@ import androidx.core.content.ContextCompat
 import java.util.UUID
 
 class BluetoothPrinterManager(private val context: Context) {
-    private val adapter: BluetoothAdapter?
-        get() = context.getSystemService(BluetoothManager::class.java)?.adapter ?: BluetoothAdapter.getDefaultAdapter()
+    private val manager: BluetoothManager?
+        get() = context.getSystemService(BluetoothManager::class.java)
+
+    private val adapter
+        get() = manager?.adapter
 
     fun hasConnectPermission(): Boolean {
         return Build.VERSION.SDK_INT < 31 ||
@@ -43,8 +45,7 @@ class BluetoothPrinterManager(private val context: Context) {
             device.createRfcommSocketToServiceRecord(uuid).use { socket ->
                 socket.connect()
                 socket.outputStream.use { output ->
-                    output.write(bytes)
-                    output.flush()
+                    output.writePrinterBytes(bytes)
                 }
             }
         }.fold(

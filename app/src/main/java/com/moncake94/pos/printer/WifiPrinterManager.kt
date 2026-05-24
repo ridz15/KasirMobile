@@ -14,8 +14,7 @@ class WifiPrinterManager {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress(host, port), 5_000)
                 socket.getOutputStream().use { output ->
-                    output.write(bytes)
-                    output.flush()
+                    output.writePrinterBytes(bytes)
                 }
             }
         }.fold(

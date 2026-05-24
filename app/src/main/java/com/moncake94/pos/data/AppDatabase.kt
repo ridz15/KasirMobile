@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TransactionItemEntity::class,
         ClosingReportEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -29,6 +29,9 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_1_2)
                 .addMigrations(MIGRATION_2_3)
                 .addMigrations(MIGRATION_1_3)
+                .addMigrations(MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_4)
+                .addMigrations(MIGRATION_2_4)
                 .build()
         }
 
@@ -71,6 +74,34 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 MIGRATION_1_2.migrate(db)
                 MIGRATION_2_3.migrate(db)
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN is_available INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN subtotal INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE transactions SET subtotal = total WHERE subtotal = 0")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN discount_amount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE transactions ADD COLUMN note TEXT")
+                db.execSQL("ALTER TABLE closing_reports ADD COLUMN discount_total INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE closing_reports ADD COLUMN tunai_count INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE closing_reports ADD COLUMN qris_count INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_1_4 = object : Migration(1, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_1_2.migrate(db)
+                MIGRATION_2_3.migrate(db)
+                MIGRATION_3_4.migrate(db)
+            }
+        }
+
+        private val MIGRATION_2_4 = object : Migration(2, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                MIGRATION_2_3.migrate(db)
+                MIGRATION_3_4.migrate(db)
             }
         }
     }

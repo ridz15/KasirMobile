@@ -32,6 +32,7 @@ data class ProductEntity(
     @ColumnInfo(name = "category_id") val categoryId: Long?,
     @ColumnInfo(name = "base_price") val basePrice: Long,
     @ColumnInfo(name = "has_variations") val hasVariations: Boolean,
+    @ColumnInfo(name = "is_available", defaultValue = "1") val isAvailable: Boolean = true,
     @ColumnInfo(name = "created_at") val createdAt: Long = now(),
     @ColumnInfo(name = "updated_at") val updatedAt: Long = now()
 )
@@ -81,6 +82,8 @@ data class ProductVariationOptionEntity(
 data class TransactionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     @ColumnInfo(name = "transaction_number") val transactionNumber: String,
+    @ColumnInfo(defaultValue = "0") val subtotal: Long = 0,
+    @ColumnInfo(name = "discount_amount", defaultValue = "0") val discountAmount: Long = 0,
     val total: Long,
     @ColumnInfo(name = "payment_amount") val paymentAmount: Long,
     @ColumnInfo(name = "change_amount") val changeAmount: Long,
@@ -91,6 +94,7 @@ data class TransactionEntity(
     @ColumnInfo(name = "refunded_at") val refundedAt: Long? = null,
     @ColumnInfo(name = "refund_amount", defaultValue = "0") val refundAmount: Long = 0,
     @ColumnInfo(name = "refund_reason") val refundReason: String? = null,
+    val note: String? = null,
     @ColumnInfo(name = "created_at") val createdAt: Long = now()
 )
 
@@ -124,6 +128,7 @@ data class ClosingReportEntity(
     @ColumnInfo(name = "report_date") val reportDate: Long,
     @ColumnInfo(name = "printed_at") val printedAt: Long = now(),
     @ColumnInfo(name = "gross_sales") val grossSales: Long,
+    @ColumnInfo(name = "discount_total", defaultValue = "0") val discountTotal: Long = 0,
     @ColumnInfo(name = "void_total") val voidTotal: Long,
     @ColumnInfo(name = "refund_total") val refundTotal: Long,
     @ColumnInfo(name = "net_sales") val netSales: Long,
@@ -132,6 +137,8 @@ data class ClosingReportEntity(
     @ColumnInfo(name = "refund_count") val refundCount: Int,
     @ColumnInfo(name = "tunai_total") val tunaiTotal: Long,
     @ColumnInfo(name = "qris_total") val qrisTotal: Long,
+    @ColumnInfo(name = "tunai_count", defaultValue = "0") val tunaiCount: Int = 0,
+    @ColumnInfo(name = "qris_count", defaultValue = "0") val qrisCount: Int = 0,
     @ColumnInfo(name = "item_sold_count") val itemSoldCount: Int,
     @ColumnInfo(name = "best_sellers_text") val bestSellersText: String
 )

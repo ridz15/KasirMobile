@@ -51,8 +51,12 @@ class UsbPrinterManager(private val context: Context) {
             val connection = manager.openDevice(device) ?: error("Gagal membuka printer USB")
             try {
                 connection.claimInterface(printerInterface, true)
-                val result = connection.bulkTransfer(endpoint, bytes, bytes.size, 5_000)
-                if (result < 0) error("Transfer USB gagal")
+                bytes.asIterableChunks(128).forEach { chunk ->
+                    val result = connection.bulkTransfer(endpoint, chunk, chunk.size, 5_000)
+                    if (result < 0) error("Transfer USB gagal")
+                    Thread.sleep(20)
+                }
+                Thread.sleep(500)
             } finally {
                 connection.releaseInterface(printerInterface)
                 connection.close()

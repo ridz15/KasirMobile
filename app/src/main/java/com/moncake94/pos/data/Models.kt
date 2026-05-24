@@ -39,6 +39,7 @@ data class BestSeller(
 data class DailyReport(
     val dateMillis: Long,
     val grossSales: Long,
+    val discountTotal: Long,
     val voidTotal: Long,
     val refundTotal: Long,
     val netSales: Long,
@@ -47,6 +48,8 @@ data class DailyReport(
     val refundCount: Int,
     val tunaiTotal: Long,
     val qrisTotal: Long,
+    val tunaiCount: Int,
+    val qrisCount: Int,
     val itemSoldCount: Int,
     val bestSellers: List<BestSeller>,
     val transactions: List<TransactionWithItems>
@@ -56,6 +59,7 @@ fun DailyReport.toClosingEntity(): ClosingReportEntity {
     return ClosingReportEntity(
         reportDate = dateMillis,
         grossSales = grossSales,
+        discountTotal = discountTotal,
         voidTotal = voidTotal,
         refundTotal = refundTotal,
         netSales = netSales,
@@ -64,6 +68,8 @@ fun DailyReport.toClosingEntity(): ClosingReportEntity {
         refundCount = refundCount,
         tunaiTotal = tunaiTotal,
         qrisTotal = qrisTotal,
+        tunaiCount = tunaiCount,
+        qrisCount = qrisCount,
         itemSoldCount = itemSoldCount,
         bestSellersText = bestSellers.joinToString("\n") { "${it.productName} (${it.quantitySold})" }
     )
@@ -77,9 +83,10 @@ fun DailyReport.toClosingText(): String {
         appendLine("Dibuat: ${formatDateTime(System.currentTimeMillis())}")
         appendLine()
         appendLine("Total Penjualan: ${formatCurrency(grossSales)}")
+        appendLine("Diskon: ${formatCurrency(discountTotal)}")
         appendLine("Penjualan Bersih: ${formatCurrency(netSales)}")
-        appendLine("Tunai: ${formatCurrency(tunaiTotal)}")
-        appendLine("QRIS: ${formatCurrency(qrisTotal)}")
+        appendLine("Tunai: ${formatCurrency(tunaiTotal)} ($tunaiCount)")
+        appendLine("QRIS: ${formatCurrency(qrisTotal)} ($qrisCount)")
         appendLine("Void: ${formatCurrency(voidTotal)}")
         appendLine("Refund: ${formatCurrency(refundTotal)}")
         appendLine()
@@ -101,6 +108,7 @@ fun DailyReport.toClosingJson(): String {
         .put("date", formatDate(dateMillis))
         .put("created_at", System.currentTimeMillis())
         .put("gross_sales", grossSales)
+        .put("discount_total", discountTotal)
         .put("void_total", voidTotal)
         .put("refund_total", refundTotal)
         .put("net_sales", netSales)
@@ -109,6 +117,8 @@ fun DailyReport.toClosingJson(): String {
         .put("refund_count", refundCount)
         .put("tunai_total", tunaiTotal)
         .put("qris_total", qrisTotal)
+        .put("tunai_count", tunaiCount)
+        .put("qris_count", qrisCount)
         .put("item_sold_count", itemSoldCount)
         .put("best_sellers", org.json.JSONArray().also { array ->
             bestSellers.forEach { array.put(org.json.JSONObject().put("product_name", it.productName).put("quantity_sold", it.quantitySold)) }
@@ -124,9 +134,10 @@ fun ClosingReportEntity.toClosingText(): String {
         appendLine("Dicetak: ${formatDateTime(printedAt)}")
         appendLine()
         appendLine("Total Penjualan: ${formatCurrency(grossSales)}")
+        appendLine("Diskon: ${formatCurrency(discountTotal)}")
         appendLine("Penjualan Bersih: ${formatCurrency(netSales)}")
-        appendLine("Tunai: ${formatCurrency(tunaiTotal)}")
-        appendLine("QRIS: ${formatCurrency(qrisTotal)}")
+        appendLine("Tunai: ${formatCurrency(tunaiTotal)} ($tunaiCount)")
+        appendLine("QRIS: ${formatCurrency(qrisTotal)} ($qrisCount)")
         appendLine("Void: ${formatCurrency(voidTotal)}")
         appendLine("Refund: ${formatCurrency(refundTotal)}")
         appendLine()

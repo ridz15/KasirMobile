@@ -76,7 +76,7 @@ fun PrinterSetupScreen(state: UiState, viewModel: PosViewModel) {
                 }
             }
         }
-        items(printers) { printer ->
+        items(printers, key = { printer -> "${printer.type}-${printer.address}" }) { printer ->
             Card(onClick = { viewModel.savePrinter(printer) }, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(printer.name, fontWeight = FontWeight.Bold)

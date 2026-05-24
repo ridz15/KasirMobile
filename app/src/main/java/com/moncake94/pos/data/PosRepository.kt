@@ -1,8 +1,10 @@
 package com.moncake94.pos.data
 
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class PosRepository(private val database: AppDatabase) {
     private val dao = database.dao()
@@ -181,6 +183,7 @@ class PosRepository(private val database: AppDatabase) {
         name: String,
         categoryId: Long?,
         basePrice: Long,
+        isAvailable: Boolean,
         variationName: String?,
         options: List<Pair<String, Long>>
     ) {
@@ -191,7 +194,8 @@ class PosRepository(private val database: AppDatabase) {
                     name = name.trim(),
                     categoryId = categoryId,
                     basePrice = if (hasVariations) 0 else basePrice,
-                    hasVariations = hasVariations
+                    hasVariations = hasVariations,
+                    isAvailable = isAvailable
                 )
             )
         } else {
@@ -202,6 +206,7 @@ class PosRepository(private val database: AppDatabase) {
                     categoryId = categoryId,
                     basePrice = if (hasVariations) 0 else basePrice,
                     hasVariations = hasVariations,
+                    isAvailable = isAvailable,
                     updatedAt = now()
                 )
             )
@@ -230,39 +235,54 @@ class PosRepository(private val database: AppDatabase) {
 
     suspend fun deleteProduct(productId: Long) = dao.deleteProduct(productId)
 
+    suspend fun setProductAvailability(productId: Long, isAvailable: Boolean): Boolean {
+        return dao.updateProductAvailability(productId, isAvailable, now()) > 0
+    }
+
     suspend fun saveTransaction(
         cartItems: List<CartItem>,
         paymentAmount: Long,
         changeAmount: Long,
-        paymentMethod: PaymentMethod
+        paymentMethod: PaymentMethod,
+        discountAmount: Long,
+        note: String?
     ): Long {
-        val total = cartItems.sumOf { it.subtotal }
-        val number = "TRX-${System.currentTimeMillis()}"
-        val transactionId = dao.insertTransaction(
-            TransactionEntity(
-                transactionNumber = number,
-                total = total,
-                paymentAmount = paymentAmount,
-                changeAmount = changeAmount,
-                paymentMethod = paymentMethod.name,
-                status = TransactionStatus.SUCCESS.name
-            )
-        )
-        dao.insertTransactionItems(
-            cartItems.map {
-                TransactionItemEntity(
-                    transactionId = transactionId,
-                    productId = it.productId,
-                    productName = it.productName,
-                    selectedVariationName = it.variationName,
-                    selectedVariationOption = it.optionName,
-                    price = it.price,
-                    quantity = it.quantity,
-                    subtotal = it.subtotal
+        val subtotal = cartItems.sumOf { it.subtotal }
+        val safeDiscount = discountAmount.coerceIn(0, subtotal)
+        val total = subtotal - safeDiscount
+        return database.withTransaction {
+            val createdAt = now()
+            val number = nextTransactionNumber(createdAt)
+            val transactionId = dao.insertTransaction(
+                TransactionEntity(
+                    transactionNumber = number,
+                    subtotal = subtotal,
+                    discountAmount = safeDiscount,
+                    total = total,
+                    paymentAmount = paymentAmount,
+                    changeAmount = changeAmount,
+                    paymentMethod = paymentMethod.name,
+                    status = TransactionStatus.SUCCESS.name,
+                    note = note?.trim()?.takeIf { it.isNotBlank() },
+                    createdAt = createdAt
                 )
-            }
-        )
-        return transactionId
+            )
+            dao.insertTransactionItems(
+                cartItems.map {
+                    TransactionItemEntity(
+                        transactionId = transactionId,
+                        productId = it.productId,
+                        productName = it.productName,
+                        selectedVariationName = it.variationName,
+                        selectedVariationOption = it.optionName,
+                        price = it.price,
+                        quantity = it.quantity,
+                        subtotal = it.subtotal
+                    )
+                }
+            )
+            transactionId
+        }
     }
 
     suspend fun getTransaction(id: Long): TransactionWithItems? = dao.getTransaction(id)
@@ -305,6 +325,16 @@ class PosRepository(private val database: AppDatabase) {
         val start = LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli()
         val end = LocalDate.now(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
         return start to end
+    }
+
+    private suspend fun nextTransactionNumber(createdAt: Long): String {
+        val zone = ZoneId.systemDefault()
+        val date = java.time.Instant.ofEpochMilli(createdAt).atZone(zone).toLocalDate()
+        val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
+        val sequence = dao.countTransactionsBetween(start, end) + 1
+        val dateCode = date.format(DateTimeFormatter.ofPattern("ddMMyy"))
+        return "M94-$dateCode-${sequence.toString().padStart(4, '0')}"
     }
 }
 

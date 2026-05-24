@@ -45,6 +45,9 @@ interface PosDao {
     @Query("SELECT * FROM closing_reports ORDER BY printed_at DESC")
     fun observeClosingReports(): Flow<List<ClosingReportEntity>>
 
+    @Query("SELECT * FROM closing_reports ORDER BY id")
+    suspend fun getAllClosingReports(): List<ClosingReportEntity>
+
     @Transaction
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransaction(id: Long): TransactionWithItems?
@@ -79,6 +82,9 @@ interface PosDao {
     @Query("DELETE FROM products WHERE id = :productId")
     suspend fun deleteProduct(productId: Long)
 
+    @Query("UPDATE products SET is_available = :isAvailable, updated_at = :updatedAt WHERE id = :productId")
+    suspend fun updateProductAvailability(productId: Long, isAvailable: Boolean, updatedAt: Long): Int
+
     @Query("DELETE FROM product_variations WHERE product_id = :productId")
     suspend fun deleteVariationsForProduct(productId: Long)
 
@@ -109,6 +115,9 @@ interface PosDao {
     @Insert
     suspend fun insertClosingReport(report: ClosingReportEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertClosingReports(reports: List<ClosingReportEntity>)
+
     @Query("SELECT * FROM closing_reports WHERE id = :id")
     suspend fun getClosingReport(id: Long): ClosingReportEntity?
 
@@ -130,6 +139,9 @@ interface PosDao {
     @Query("DELETE FROM categories")
     suspend fun clearCategories()
 
+    @Query("DELETE FROM closing_reports")
+    suspend fun clearClosingReports()
+
     @Query(
         "UPDATE transactions SET status = 'VOID', void_reason = :reason, voided_at = :voidedAt " +
             "WHERE id = :transactionId AND status = 'SUCCESS'"
@@ -147,6 +159,9 @@ interface PosDao {
 
     @Query("SELECT COUNT(*) FROM transactions WHERE created_at BETWEEN :start AND :end")
     fun observeTransactionCountBetween(start: Long, end: Long): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE created_at BETWEEN :start AND :end")
+    suspend fun countTransactionsBetween(start: Long, end: Long): Int
 
     @Query(
         "SELECT product_name AS productName, SUM(quantity) AS quantitySold " +

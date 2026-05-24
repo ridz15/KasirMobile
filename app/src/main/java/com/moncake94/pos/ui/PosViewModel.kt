@@ -41,6 +41,8 @@ data class UiState(
     val selectedCategoryId: Long? = null,
     val cart: List<CartItem> = emptyList(),
     val paymentText: String = "",
+    val discountText: String = "",
+    val transactionNote: String = "",
     val paymentMethod: PaymentMethod = PaymentMethod.TUNAI,
     val reportDate: LocalDate = LocalDate.now(),
     val totalSalesToday: Long = 0,
@@ -49,19 +51,15 @@ data class UiState(
     val bluetoothPrinters: List<PrinterTarget> = emptyList(),
     val usbPrinters: List<PrinterTarget> = emptyList()
 ) {
-    val total: Long = cart.sumOf { it.subtotal }
+    val subtotal: Long = cart.sumOf { it.subtotal }
+    val discountAmount: Long = discountText.filter { it.isDigit() }.toLongOrNull()?.coerceAtMost(subtotal) ?: 0
+    val total: Long = (subtotal - discountAmount).coerceAtLeast(0)
     val itemCount: Int = cart.sumOf { it.quantity }
     val cashInputAmount: Long = paymentText.filter { it.isDigit() }.toLongOrNull() ?: 0
     val paymentAmount: Long = if (paymentMethod == PaymentMethod.QRIS) total else cashInputAmount
     val changeAmount: Long = if (paymentMethod == PaymentMethod.QRIS) 0 else (paymentAmount - total).coerceAtLeast(0)
     val shortageAmount: Long = (total - paymentAmount).coerceAtLeast(0)
     val isPaymentEnough: Boolean = cart.isNotEmpty() && (paymentMethod == PaymentMethod.QRIS || paymentAmount >= total)
-    val filteredProducts: List<ProductWithDetails> = products.filter {
-        val matchesSearch = search.isBlank() || it.product.name.contains(search, ignoreCase = true)
-        val matchesCategory = selectedCategoryId == null || it.product.categoryId == selectedCategoryId
-        matchesSearch && matchesCategory
-    }
-    val report: DailyReport = buildDailyReport(reportDate, transactions)
 }
 
 class PosViewModel(
@@ -99,6 +97,8 @@ class PosViewModel(
     fun search(value: String) = update { it.copy(search = value) }
     fun selectCategory(id: Long?) = update { it.copy(selectedCategoryId = id) }
     fun payment(value: String) = update { it.copy(paymentText = value.filter { c -> c.isDigit() }) }
+    fun discount(value: String) = update { it.copy(discountText = value.filter { c -> c.isDigit() }) }
+    fun transactionNote(value: String) = update { it.copy(transactionNote = value) }
     fun selectPaymentMethod(method: PaymentMethod) = update { it.copy(paymentMethod = method) }
     fun selectReportDate(date: LocalDate) = update { it.copy(reportDate = date) }
 
@@ -138,7 +138,7 @@ class PosViewModel(
     }
 
     fun remove(key: String) = update { it.copy(cart = it.cart.filterNot { item -> item.key == key }) }
-    fun clearCart() = update { it.copy(cart = emptyList(), paymentText = "", paymentMethod = PaymentMethod.TUNAI) }
+    fun clearCart() = update { it.copy(cart = emptyList(), paymentText = "", discountText = "", transactionNote = "", paymentMethod = PaymentMethod.TUNAI) }
 
     fun checkout(printAfterSave: Boolean) {
         val snapshot = state.value
@@ -149,10 +149,12 @@ class PosViewModel(
                 cartItems = snapshot.cart,
                 paymentAmount = snapshot.paymentAmount,
                 changeAmount = snapshot.changeAmount,
-                paymentMethod = snapshot.paymentMethod
+                paymentMethod = snapshot.paymentMethod,
+                discountAmount = snapshot.discountAmount,
+                note = snapshot.transactionNote
             )
             val saved = repository.getTransaction(transactionId)
-            update { it.copy(cart = emptyList(), paymentText = "", paymentMethod = PaymentMethod.TUNAI) }
+            update { it.copy(cart = emptyList(), paymentText = "", discountText = "", transactionNote = "", paymentMethod = PaymentMethod.TUNAI) }
             message("Transaksi tersimpan")
             if (printAfterSave && saved != null) printTransaction(saved)
         }
@@ -172,12 +174,20 @@ class PosViewModel(
         }
     }
 
-    fun saveProduct(id: Long?, name: String, categoryId: Long?, basePrice: Long, variationName: String?, options: List<Pair<String, Long>>) {
+    fun saveProduct(id: Long?, name: String, categoryId: Long?, basePrice: Long, isAvailable: Boolean, variationName: String?, options: List<Pair<String, Long>>) {
         if (name.isBlank()) return message("Nama produk wajib diisi")
         if (options.isEmpty() && basePrice <= 0) return message("Harga produk wajib diisi")
         viewModelScope.launch {
-            repository.saveProduct(id, name, categoryId, basePrice, variationName, options)
+            repository.saveProduct(id, name, categoryId, basePrice, isAvailable, variationName, options)
             message("Produk tersimpan")
+        }
+    }
+
+    fun setProductAvailability(productId: Long, isAvailable: Boolean) {
+        viewModelScope.launch {
+            if (repository.setProductAvailability(productId, isAvailable)) {
+                message(if (isAvailable) "Produk tersedia" else "Produk ditandai habis")
+            }
         }
     }
 
@@ -229,16 +239,6 @@ class PosViewModel(
         }
     }
 
-    fun printCurrentCart() {
-        val snapshot = state.value
-        viewModelScope.launch {
-            handlePrintResult(
-                printerService.printCartReceipt(snapshot.cart, snapshot.paymentAmount, snapshot.changeAmount, snapshot.paymentMethod),
-                "Struk dikirim"
-            )
-        }
-    }
-
     fun printTransaction(transaction: TransactionWithItems) {
         viewModelScope.launch {
             handlePrintResult(printerService.printTransactionReceipt(transaction), "Struk dikirim")
@@ -247,9 +247,11 @@ class PosViewModel(
 
     fun printClosingReport(report: DailyReport) {
         viewModelScope.launch {
-            repository.saveClosingReport(report)
             when (val result = printerService.printClosingReport(report)) {
-                PrinterResult.Success -> message("Closing berhasil dicetak.")
+                PrinterResult.Success -> {
+                    repository.saveClosingReport(report)
+                    message("Closing berhasil dicetak dan disimpan.")
+                }
                 is PrinterResult.Error -> {
                     if (result.message.contains("Printer belum dipilih", ignoreCase = true)) {
                         message("Printer belum dipilih.")
@@ -323,14 +325,23 @@ class PosViewModel(
     }
 }
 
-private fun buildDailyReport(date: LocalDate, transactions: List<TransactionWithItems>): DailyReport {
+internal fun buildDailyReport(date: LocalDate, transactions: List<TransactionWithItems>): DailyReport {
     val zone = ZoneId.systemDefault()
     val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
     val end = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - 1
-    val dailyTransactions = transactions.filter { it.transaction.createdAt in start..end }
-    val success = dailyTransactions.filter { it.transaction.status == TransactionStatus.SUCCESS.name }
-    val voided = dailyTransactions.filter { it.transaction.status == TransactionStatus.VOID.name }
-    val refunded = dailyTransactions.filter { it.transaction.status == TransactionStatus.REFUNDED.name }
+    val createdOnDate = transactions.filter { it.transaction.createdAt in start..end }
+    val voidedOnDate = transactions.filter {
+        it.transaction.status == TransactionStatus.VOID.name &&
+            ((it.transaction.voidedAt ?: it.transaction.createdAt) in start..end)
+    }
+    val refundedOnDate = transactions.filter {
+        it.transaction.status == TransactionStatus.REFUNDED.name &&
+            ((it.transaction.refundedAt ?: it.transaction.createdAt) in start..end)
+    }
+    val dailyTransactions = (createdOnDate + voidedOnDate + refundedOnDate)
+        .distinctBy { it.transaction.id }
+        .sortedByDescending { it.transaction.createdAt }
+    val success = createdOnDate.filter { it.transaction.status == TransactionStatus.SUCCESS.name }
     val bestSellers = success
         .flatMap { it.items }
         .groupBy { it.productName }
@@ -338,21 +349,25 @@ private fun buildDailyReport(date: LocalDate, transactions: List<TransactionWith
         .sortedByDescending { it.quantitySold }
         .take(5)
 
-    val grossSales = dailyTransactions.sumOf { it.transaction.total }
-    val voidTotal = voided.sumOf { it.transaction.total }
-    val refundTotal = refunded.sumOf { it.transaction.refundAmount.takeIf { amount -> amount > 0 } ?: it.transaction.total }
+    val grossSales = createdOnDate.sumOf { it.transaction.subtotal.takeIf { subtotal -> subtotal > 0 } ?: it.transaction.total }
+    val discountTotal = createdOnDate.sumOf { it.transaction.discountAmount }
+    val voidTotal = voidedOnDate.sumOf { it.transaction.total }
+    val refundTotal = refundedOnDate.sumOf { it.transaction.refundAmount.takeIf { amount -> amount > 0 } ?: it.transaction.total }
 
     return DailyReport(
         dateMillis = start,
         grossSales = grossSales,
+        discountTotal = discountTotal,
         voidTotal = voidTotal,
         refundTotal = refundTotal,
-        netSales = grossSales - voidTotal - refundTotal,
+        netSales = grossSales - discountTotal - voidTotal - refundTotal,
         successCount = success.size,
-        voidCount = voided.size,
-        refundCount = refunded.size,
+        voidCount = voidedOnDate.size,
+        refundCount = refundedOnDate.size,
         tunaiTotal = success.filter { it.transaction.paymentMethod == PaymentMethod.TUNAI.name }.sumOf { it.transaction.total },
         qrisTotal = success.filter { it.transaction.paymentMethod == PaymentMethod.QRIS.name }.sumOf { it.transaction.total },
+        tunaiCount = success.count { it.transaction.paymentMethod == PaymentMethod.TUNAI.name },
+        qrisCount = success.count { it.transaction.paymentMethod == PaymentMethod.QRIS.name },
         itemSoldCount = success.flatMap { it.items }.sumOf { it.quantity },
         bestSellers = bestSellers,
         transactions = dailyTransactions
